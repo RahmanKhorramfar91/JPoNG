@@ -524,7 +524,7 @@ def Publish_results(s_time,MIP_gap):
     [total_fge := total_fge+GV.flowGE_val[j,n,tau] for j in range(nG) for n in range(nE) for tau in FY];
     [total_fgl := total_fgl+GV.flowGL_val[k,j,tau] for j in range(nSVL) for k in range(nG) for tau in FY];
     elapsed = time.time()-s_time;
-    header0 = ['Power_network_size','cluster_method','Rep-Days',
+    header0 = ['Power_network_size','cluster_method','Base_Year','Rep-Days',
                'Emis-case','Elec_scenario', 'reduc-goal','RPS','UC-active?',
               'UC-rlx?','int-vars-rlx?','Metal-air-cost',
               'MI-gap(%)', 'Run time(sec)','Total-cost',
@@ -545,6 +545,7 @@ def Publish_results(s_time,MIP_gap):
               'ng','solar','wind','hydro','nuclear','OCGT','CCGT','CCGT-CCS','solar-UPV','wind-new','wind-offshore','nuclear-new', # decommissioned
               ];
     row = []; row.append(Setting.Power_network_size); row.append(Setting.rep_day_folder);
+    row.append(Setting.base_year);
     row.append(Setting.num_rep_days);row.append(Setting.emis_case);
     row.append(Setting.electrification_scenario);
     row.append(Setting.emis_reduc_goal);

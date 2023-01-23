@@ -19,7 +19,7 @@ import sys;
 #import Modules;
 #%% Set Default Setting for the Porblem 
 Setting.Power_network_size = 17; 
-Setting.base_year=2011;
+Setting.base_year=2004;
 Setting.rep_day_folder = 'joint_CF_with_extreme_days';#extreme_days
 Setting.num_rep_days = 2;
 Setting.emis_case = 1;
@@ -44,25 +44,25 @@ if len(sys.argv)>1:
     print(str(sys.argv));
     Setting.rep_day_folder = sys.argv[1];
     Setting.Power_network_size = int(sys.argv[2]);
-    Setting.num_rep_days = int(sys.argv[3]);
-    Setting.emis_case = int(sys.argv[4]);
-    Setting.electrification_scenario = sys.argv[5];
-    Setting.emis_reduc_goal = float(sys.argv[6]); # %80
-    Setting.VRE_share = float(sys.argv[7]);
-    #Setting.RNG_cap = float(sys.argv[6]);
-    Setting.solver_gap = float(sys.argv[8]);
-    Setting.wall_clock_time_lim = int(sys.argv[9]); # hour
-    Setting.UC_active = bool(int(sys.argv[10]));
-    Setting.relax_UC_vars = bool(int(sys.argv[11]));
-    Setting.relax_int_vars = bool(int(sys.argv[12]));
-    Setting.solver_thread_num = int(sys.argv[13]);
-    Setting.Metal_air_storage_cost=sys.argv[14]; # high, low, medium, no-metal-air
+    Setting.base_year = int(sys.argv[3]);
+    Setting.num_rep_days = int(sys.argv[4]);
+    Setting.emis_case = int(sys.argv[5]);
+    Setting.electrification_scenario = sys.argv[6];
+    Setting.emis_reduc_goal = float(sys.argv[7]); # %80
+    Setting.VRE_share = float(sys.argv[8]);
+    Setting.solver_gap = float(sys.argv[9]);
+    Setting.wall_clock_time_lim = int(sys.argv[10]); # hour
+    Setting.UC_active = bool(int(sys.argv[11]));
+    Setting.relax_UC_vars = bool(int(sys.argv[12]));
+    Setting.relax_int_vars = bool(int(sys.argv[13]));
+    Setting.solver_thread_num = int(sys.argv[14]);
+    Setting.Metal_air_storage_cost=sys.argv[15]; # high, low, medium, no-metal-air
 
 
 Setting.wall_clock_time_lim = Setting.wall_clock_time_lim*3600; # convert to second for Gurobi
-Setting.print_result_header = 1;
+Setting.print_result_header = 0;
 Setting.copper_plate_approx = False; 
-Setting.print_all_vars = 1;
+Setting.print_all_vars = 0;
 s_time = time.time();
 
 #%% create and recall and run the modules
@@ -79,7 +79,7 @@ if Setting.emis_case==1:
     Model.setObjective(EV.e_system_cost);
 else:
     Model.setObjective(GV.g_system_cost+ EV.e_system_cost);
-# Model.setParam('OutputFlag', 0);
+Model.setParam('OutputFlag', 0);
 Model.setParam('MIPGap', Setting.solver_gap);
 Model.setParam('Timelimit', Setting.wall_clock_time_lim);
 # Model.setParam('Threads',Setting.solver_thread_num);
