@@ -364,14 +364,14 @@ for i in range(len(df_g2g_br)):
 
 
 class pipe:
-    from_node = [];
-    to_node = [];
-    is_exist = [];
-    length = [];
-    Cap = [];
-    inv_coef =[];
-    FOM=[];
-    decom = [];
+    from_node = int();
+    to_node = int();
+    is_exist = int();
+    length = float();
+    Cap = float();
+    inv_coef =float();
+    FOM=float();
+    decom = float();
     
 
 PipeLines = list();

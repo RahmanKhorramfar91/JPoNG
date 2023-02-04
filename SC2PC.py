@@ -38,42 +38,43 @@ def system(command):
 
 
 folder = 'joint_CF_with_extreme_days';
-net_size = 6;
-rep_days = [30];
+net_size = 17;
+rep_days = [365];
 #rep_days = np.insert(rep_days,len(rep_days),365);
 case = [1,2];
-elec_scen = ['2016'];
-emis_reduc_goal = [0.0];
+BY = np.array([2020]);
+emis_reduc_goal = [0];
+elec_scen = ['Historical'];
 VRE_share = [0.0];
-solver_gap = 0.001;
-wall_clock_time_lim = 6; #hours;
+solver_gap = 0.01;
+wall_clock_time_lim = 10; #hours;
 UC_active = 1;
 relax_UC_vars = 1;
 relax_int_vars = 0;
-solver_thread_num = 48;
+solver_thread_num = 6;
 metal_air_cost = ['no-metal-air'];
 param_list=[];
-SuperClound_Thread = 96;
-
-for i2 in case:
-    for i1 in rep_days:
-        for i3 in elec_scen:
-            for i4 in emis_reduc_goal:
-                for i5 in VRE_share:
-                    param = str(net_size)+'-'+ str(i1)+'-'+str(i3)+'-'+str(i2)+'-'+str(i4)+'-'+str(i5)+'.csv';
-                    # if i2==1 and i3=='HM' and i4==0.85:continue;
-                    # if i2==1 and i3=='RM' and i4==0.95:continue;
-                    # if i2==1 and i3=='RM' and i4==0.85:continue;
-                    
-                    # if i2==3 and not ((i3=='RM' and i4==0.85) or (i2==3 and i3=='RM' and i4==0.95)):
-                    #     continue;
+SuperClound_Thread = 8;
+for i0 in BY:
+    for i2 in case:
+        for i1 in rep_days:
+            for i3 in elec_scen:
+                for i4 in emis_reduc_goal:
+                    for i5 in VRE_share:
+                        param = str(net_size)+'-'+ str(i1)+'-'+str(i3)+'-'+str(i2)+'-'+str(i4)+'-'+str(i5)+'.csv';
+                        # if i2==1 and i3=='HM' and i4==0.85:continue;
+                        # if i2==1 and i3=='RM' and i4==0.95:continue;
+                        # if i2==1 and i3=='RM' and i4==0.85:continue;
                         
-                    param_list.append(param);    
+                        # if i2==3 and not ((i3=='RM' and i4==0.85) or (i2==3 and i3=='RM' and i4==0.95)):
+                        #     continue;
+                            
+                        param_list.append(param);    
 del i2,i3,i1,i4,i5;                    
 system('cd '+os.getcwd());
 system('scp -r rkhorramfar@txe1-login.mit.edu:/home/gridsan/rkhorramfar/JPoNG/JPoNG_Results.csv ./')
 
 for param in param_list:
-    system('scp -r rkhorramfar@txe1-login.mit.edu:/home/gridsan/rkhorramfar/JPonG-Python-Codes/'+param+' ./');
+    system('scp -r rkhorramfar@txe1-login.mit.edu:/home/gridsan/rkhorramfar/JPoNG/'+param+' ./');
     
     

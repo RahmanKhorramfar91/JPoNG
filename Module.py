@@ -30,33 +30,39 @@ nPipe = len(PipeLines);
 nSVL = len(Exist_SVL);
 nG = len(Gnodes);
 FY = np.arange(365);
-thermal_units = ["ng","CT","CC","CC-CCS","nuclear","nuclear-new"];
-NG_units = ["ng","CT","CC","CC-CCS"];
+thermal_units = ["ng","OCGT","CCGT","CCGT-CCS","nuclear","nuclear-new"];
+NG_units = ["ng","OCGT","CCGT","CCGT-CCS"];
 VRE = ["solar","wind","wind-offshore-new","solar-UPV","wind-new"];# hydro not included
 
 def Power_System_Model(Model):    
     #% define decision variables 
-    EV.Xop = Model.addVars(nE,nPlt,vtype=GRB.INTEGER);
-    EV.Xest = Model.addVars(nE,nPlt,vtype=GRB.INTEGER);
-    EV.Xdec = Model.addVars(nE,nPlt,vtype=GRB.INTEGER);
-    EV.Ze = Model.addVars(nBr,vtype=GRB.BINARY);
+    EV.Xop = Model.addVars(nE,nPlt,vtype=GRB.CONTINUOUS);
+    EV.Xest = Model.addVars(nE,nPlt,vtype=GRB.CONTINUOUS);
+    EV.Xdec = Model.addVars(nE,nPlt,vtype=GRB.CONTINUOUS);
+    EV.Ze = Model.addVars(nBr,vtype=GRB.CONTINUOUS);
     
-    if Setting.UC_active:
+
+    if Setting.UC_active and Setting.relax_int_vars==False:
         EV.X = Model.addVars(nE,len(Te), nPlt,vtype=GRB.INTEGER);
         EV.Xup= Model.addVars(nE,len(Te), nPlt,vtype=GRB.INTEGER);
         EV.Xdown = Model.addVars(nE,len(Te), nPlt,vtype=GRB.INTEGER);
     
-    if Setting.relax_int_vars:
-        EV.Xop = Model.addVars(nE,nPlt,vtype=GRB.CONTINUOUS);
-        EV.Xest = Model.addVars(nE,nPlt,vtype=GRB.CONTINUOUS);
-        EV.Xdec = Model.addVars(nE,nPlt,vtype=GRB.CONTINUOUS);
-        EV.Ze = Model.addVars(nBr,vtype=GRB.CONTINUOUS);
+    if Setting.relax_int_vars==False:
+        EV.Xop = Model.addVars(nE,nPlt,vtype=GRB.INTEGER);
+        EV.Xest = Model.addVars(nE,nPlt,vtype=GRB.INTEGER);
+        EV.Xdec = Model.addVars(nE,nPlt,vtype=GRB.INTEGER);
+        EV.Ze = Model.addVars(nBr,vtype=GRB.BINARY);
         
     if (Setting.relax_UC_vars or Setting.relax_int_vars) and (Setting.UC_active):
         EV.X = Model.addVars(nE,len(Te), nPlt,vtype=GRB.CONTINUOUS);
         EV.Xup= Model.addVars(nE,len(Te), nPlt,vtype=GRB.CONTINUOUS);
         EV.Xdown = Model.addVars(nE,len(Te), nPlt,vtype=GRB.CONTINUOUS);
-        
+    for i in range(nPlt):
+        if i in VRE:
+            EV.Xop[i] = Model.addVars(nE,vtype=GRB.CONTINUOUS);
+            EV.Xest[i] = Model.addVars(nE,vtype=GRB.CONTINUOUS);
+            EV.Xdec[i] = Model.addVars(nE,vtype=GRB.CONTINUOUS);
+            
     EV.prod= Model.addVars(nE,len(Te), nPlt,vtype=GRB.CONTINUOUS);
     EV.theta = Model.addVars(nE,len(Te),lb=np.zeros((nE,len(Te)))-GRB.INFINITY,ub=np.zeros((nE,len(Te)))+GRB.INFINITY,vtype=GRB.CONTINUOUS);
     EV.Shed = Model.addVars(nE,len(Te),vtype=GRB.CONTINUOUS);
@@ -192,10 +198,11 @@ def Power_System_Model(Model):
   
     
     # C8: flow equation
-    Model.addConstrs(EV.flowE[b,t]==Branches[b].suscept*(EV.theta[Branches[b].to_node,t]-EV.theta[Branches[b].from_node,t]) for b in range(nBr) for t in Te if Branches[b].is_exist==1);
-    Model.addConstrs(EV.flowE[b,t]-Branches[b].suscept*(EV.theta[Branches[b].to_node,t]-EV.theta[Branches[b].from_node,t])<=10e7*(1-EV.Ze[b])  for b in range(nBr) for t in Te if Branches[b].is_exist==0);
-    Model.addConstrs(-EV.flowE[b,t]+Branches[b].suscept*(EV.theta[Branches[b].to_node,t]-EV.theta[Branches[b].from_node,t])<=10e7*(1-EV.Ze[b])  for b in range(nBr) for t in Te if Branches[b].is_exist==0);
-        
+    if Setting.copper_plate_approx==False:
+        Model.addConstrs(EV.flowE[b,t]==Branches[b].suscept*(EV.theta[Branches[b].to_node,t]-EV.theta[Branches[b].from_node,t]) for b in range(nBr) for t in Te if Branches[b].is_exist==1);
+        Model.addConstrs(EV.flowE[b,t]-Branches[b].suscept*(EV.theta[Branches[b].to_node,t]-EV.theta[Branches[b].from_node,t])<=10e7*(1-EV.Ze[b])  for b in range(nBr) for t in Te if Branches[b].is_exist==0);
+        Model.addConstrs(-EV.flowE[b,t]+Branches[b].suscept*(EV.theta[Branches[b].to_node,t]-EV.theta[Branches[b].from_node,t])<=10e7*(1-EV.Ze[b])  for b in range(nBr) for t in Te if Branches[b].is_exist==0);
+            
     # # C9: phase angle (theta) limits. already applied in the definition of the variable
     # Model.addConstrs(EV.theta[n,t]<=Other_input.pi for n in range(nE) for t in Te);
     # Model.addConstrs(-EV.theta[n,t]<=Other_input.pi for n in range(nE) for t in Te);
@@ -246,16 +253,15 @@ def Power_System_Model(Model):
     # capacity reserve margin constraint    
     Model.addConstrs(quicksum(Enodes[n].cap_factors[e_rep_hrs[t],i]*Plants[i].nameplate_cap*EV.Xop[n,i] for n in range(nE) for i in range(nPlt)) >= (1+Setting.CRM_reserve)*quicksum(Enodes[n].demand[e_rep_hrs[t]] for n in range(nE)) for t in Te);
     
-
 def NG_System_Model(Model): # for the full year
     
-    GV.Zg = Model.addVars(nPipe,vtype=GRB.BINARY);
-    GV.ZgDec = Model.addVars(nPipe,vtype=GRB.BINARY);
-    GV.ZgOp = Model.addVars(nPipe,vtype=GRB.BINARY);
-    if Setting.relax_int_vars==True:
-        GV.Zg = Model.addVars(nPipe,vtype=GRB.CONTINUOUS);
-        GV.ZgDec = Model.addVars(nPipe,vtype=GRB.CONTINUOUS);
-        GV.ZgOp = Model.addVars(nPipe,vtype=GRB.CONTINUOUS);    
+    GV.Zg = Model.addVars(nPipe,vtype=GRB.CONTINUOUS);
+    GV.ZgDec = Model.addVars(nPipe,vtype=GRB.CONTINUOUS);
+    GV.ZgOp = Model.addVars(nPipe,vtype=GRB.CONTINUOUS);
+    if Setting.relax_int_vars==False:
+        GV.Zg = Model.addVars(nPipe,vtype=GRB.BINARY);
+        GV.ZgDec = Model.addVars(nPipe,vtype=GRB.BINARY);
+        GV.ZgOp = Model.addVars(nPipe,vtype=GRB.BINARY);    
     if Setting.expansion_allowed==False:
         Model.addConstrs(GV.Zg[b]==0 for b in range(nPipe));
 
@@ -264,9 +270,9 @@ def NG_System_Model(Model): # for the full year
     GV.Sstr = Model.addVars(nSVL,len(FY),vtype = GRB.CONTINUOUS);
     GV.Svpr = Model.addVars(nSVL,len(FY),vtype = GRB.CONTINUOUS);
     GV.Sliq = Model.addVars(nSVL,len(FY),vtype = GRB.CONTINUOUS);
-    GV.supply = Model.addVars(nG,len(FY),vtype = GRB.CONTINUOUS);
+    GV.ng_inj = Model.addVars(nG,len(FY),vtype = GRB.CONTINUOUS);
     GV.Shed =  Model.addVars(nG,len(FY),vtype = GRB.CONTINUOUS);
-    GV.RNG_use = Model.addVars(nG,len(FY),vtype = GRB.CONTINUOUS);
+    GV.LCDF_inj = Model.addVars(nG,len(FY),vtype = GRB.CONTINUOUS);
     GV.flowGG =  Model.addVars(nPipe,len(FY),vtype = GRB.CONTINUOUS);
     GV.flowGE =  Model.addVars(nG,nE,len(FY),vtype = GRB.CONTINUOUS);
     GV.flowGL =  Model.addVars(nG,nSVL,len(FY),vtype = GRB.CONTINUOUS);
@@ -277,7 +283,7 @@ def NG_System_Model(Model): # for the full year
     GV.pipe_FOM_cost = Model.addVar(vtype=GRB.CONTINUOUS);
     GV.pipe_Decom_cost = Model.addVar(vtype=GRB.CONTINUOUS);
     GV.shed_cost = Model.addVar(vtype=GRB.CONTINUOUS);
-    GV.RNG_cost = Model.addVar(vtype=GRB.CONTINUOUS);
+    GV.LCDF_cost = Model.addVar(vtype=GRB.CONTINUOUS);
     GV.fom_str_cost = Model.addVar(vtype=GRB.CONTINUOUS);
     GV.import_cost = Model.addVar(vtype=GRB.CONTINUOUS);
     GV.emis_amount = Model.addVar(vtype=GRB.CONTINUOUS);
@@ -285,11 +291,11 @@ def NG_System_Model(Model): # for the full year
     
     # NG System Objective Function
     inv_pipe = LinExpr(quicksum(PipeLines[b].inv_coef*PipeLines[b].length*Other_input.pipe_per_mile*GV.Zg[b] for b in range(nPipe)));   
-    ng_import = LinExpr(quicksum(GV.supply[k,tau]*Other_input.NG_price for k in range(nG) for tau in FY));
+    ng_import = LinExpr(quicksum(GV.ng_inj[k,tau]*Other_input.NG_price for k in range(nG) for tau in FY));
     storage_inv = LinExpr(quicksum(SVLs[0].inv_coef*(SVLs[0].capex*GV.Xstr[j]+SVLs[1].capex*GV.Xvpr[j]) for j in range(nSVL)));
     storage_FOM = LinExpr(quicksum(SVLs[1].FOM*(Exist_SVL[j].vap_cap+GV.Xvpr[j])+SVLs[0].FOM*(Exist_SVL[j].str_cap+GV.Xstr[j]) for j in range(nSVL)));
     ng_shed = LinExpr(quicksum(Setting.g_shed_penalty*GV.Shed[k,tau] for k in range(nG) for tau in FY));
-    rng_import = LinExpr(quicksum(Other_input.RNG_price*GV.RNG_use[k,tau]for k in range(nG) for tau in FY));
+    rng_import = LinExpr(quicksum(Other_input.RNG_price*GV.LCDF_inj[k,tau]for k in range(nG) for tau in FY));
     pipe_FOM = LinExpr(quicksum(PipeLines[b].FOM*PipeLines[b].length*GV.ZgOp[b] for b in range(nPipe)));  
     pipe_Dec = LinExpr(quicksum(PipeLines[b].decom*PipeLines[b].length*GV.ZgDec[b] for b in range(nPipe)));  
     
@@ -300,33 +306,35 @@ def NG_System_Model(Model): # for the full year
     Model.addConstr(GV.inv_str_cost==storage_inv);
     Model.addConstr(GV.fom_str_cost==storage_FOM);
     Model.addConstr(GV.shed_cost==ng_shed);
-    Model.addConstr(GV.RNG_cost==rng_import);
+    Model.addConstr(GV.LCDF_cost==rng_import);
     Model.addConstr(GV.pipe_FOM_cost == pipe_FOM);
     Model.addConstr(GV.pipe_Decom_cost == pipe_Dec);
     Model.addConstr(GV.g_system_cost==ng_total_cost);
     
     # NG System Constraints
     #C1, C2: flow limit for NG
-    # Model.addConstrs(GV.flowGG[i,tau]<=PipeLines[i].Cap for i in range(nPipe) for tau in FY if PipeLines[i].is_exist==1);
     Model.addConstrs(GV.flowGG[i,tau]<=PipeLines[i].Cap*GV.ZgOp[i] for i in range(nPipe) for tau in FY);
+    # Model.addConstrs(GV.flowGG[b,tau]<=PipeLines[b].Cap for b in range(nPipe) for tau in FY);
+
     
-    # C3: flow balance, NG node (no shedding allowed as RNG is considered)
-    Model.addConstrs(GV.supply[k,tau]
+    # C3: flow balance, NG node (no shedding allowed as LCDF is considered)
+    GV.marginal_prices = Model.addConstrs(GV.ng_inj[k,tau]
                       -quicksum(GV.flowGG[l,tau] for l in Gnodes[k].L_exp)
                       +quicksum(GV.flowGG[l,tau] for l in Gnodes[k].L_imp)
                       -quicksum(GV.flowGE[k,n,tau] for n in Gnodes[k].adjE)
                       +quicksum((GV.flowVG[j,k,tau]-GV.flowGL[k,j,tau]) for j in Gnodes[k].adjS)
                       +GV.Shed[k,tau]
-                      +GV.RNG_use[k,tau]
+                      +GV.LCDF_inj[k,tau]
                      == Gnodes[k].demand[tau] for k in range(nG) for tau in FY);                             
     
-    # inforce all flowGE of the same cluster to take the equal values
+    # enforce all flowGE of the same cluster to take the equal values
     Model.addConstrs(GV.flowGE[k,n,tau]==GV.flowGE[k,n,days2Medoid[tau]] for k in range(nG) for n in Gnodes[k].adjE for tau in FY)
     
     # C3,C4: injection (supply) limit and curtailment limit
-    Model.addConstrs(GV.supply[k,tau]<= Gnodes[k].injU for k in range(nG) for tau in FY);    
-    Model.addConstrs(GV.Shed[k,tau]+GV.RNG_use[k,tau]<= Gnodes[k].demand[tau] for k in range(nG) for tau in FY);
-    Model.addConstrs(GV.RNG_use[k,tau]<= Gnodes[k].injU for k in range(nG) for tau in FY);    
+    # Model.addConstrs(GV.ng_inj[k,tau]<= Gnodes[k].injU for k in range(nG) for tau in FY);       
+    # Model.addConstrs(GV.Shed[k,tau]+GV.LCDF_inj[k,tau]<= Gnodes[k].demand[tau] for k in range(nG) for tau in FY);
+    Model.addConstrs(GV.ng_inj[k,tau]+GV.LCDF_inj[k,tau]<= Gnodes[k].injU for k in range(nG) for tau in FY);    
+    # Model.addConstrs(GV.Shed[k,tau]==0  for k in range(nG) for tau in FY);
 
     # C5: storage balance (storage strats empty)
     Model.addConstrs(GV.Sstr[j,tau]==Exist_SVL[j].str_cap*0+GV.Sliq[j,tau]-GV.Svpr[j,tau]/SVLs[1].eff_disCh for j in range(nSVL) for tau in FY if tau==0);
@@ -365,29 +373,27 @@ def Coupling_constraints(Model):
     
     #ex_xi = LinExpr(quicksum(g_time_weight[tau]*GV.flowGE[k,n,g_rep_days[tau]] for k in range(nG) for tau in Tg for n in Gnodes[k].adjE));
     e_emis = LinExpr(quicksum(e_time_weight[t]*Plants[i].emission*Plants[i].heat_rate*EV.prod[n,t,i] for n in range(nE) for t in Te for i in range(nPlt) if plant2sym[i] in NG_units));
-    #g_emis = LinExpr(quicksum(g_time_weight[tau]*Other_input.NG_emission*GV.supply[k,tau] for k in range(nG) for tau in Tg))-Other_input.NG_emission*ex_xi;
+    #g_emis = LinExpr(quicksum(g_time_weight[tau]*Other_input.NG_emission*GV.ng_inj[k,tau] for k in range(nG) for tau in Tg))-Other_input.NG_emission*ex_xi;
     
-    g_emis = LinExpr(quicksum(Other_input.NG_emission*(Gnodes[k].demand[tau]-GV.RNG_use[k,tau]-GV.Shed[k,tau]) for k in range(nG) for tau in FY));
+    g_emis = LinExpr(quicksum(Other_input.NG_emission*(Gnodes[k].demand[tau]-GV.LCDF_inj[k,tau]-GV.Shed[k,tau]) for k in range(nG) for tau in FY));
     Model.addConstr(EV.emis_amount==e_emis);
     Model.addConstr(GV.emis_amount==g_emis);
     
     if Setting.emis_case==1: #power system only
         Model.addConstr(EV.emis_amount<=(1-Setting.emis_reduc_goal)*Setting.e_emis_lim);
-    if Setting.emis_case==2:  # JPoNG with no RNG and emis const on power system    
+    if Setting.emis_case==2:  # JPoNG with no LCDF and emis const on power system    
         Model.addConstr(EV.emis_amount<=(1-Setting.emis_reduc_goal)*Setting.e_emis_lim);
-        Model.addConstrs(GV.RNG_use[k,tau]==0 for k in range(nG) for tau in FY);
-    if Setting.emis_case==3:#global emission limit with no RNG
+        Model.addConstrs(GV.LCDF_inj[k,tau]==0 for k in range(nG) for tau in FY);
+    if Setting.emis_case==3:#global emission limit with no LCDF
         Model.addConstr(EV.emis_amount+GV.emis_amount<=(1-Setting.emis_reduc_goal)*Setting.CO2_emission_1990);
-        Model.addConstrs(GV.RNG_use[k,tau]==0 for k in range(nG) for tau in FY);
+        Model.addConstrs(GV.LCDF_inj[k,tau]==0 for k in range(nG) for tau in FY);
     if Setting.emis_case==4:  #global emission limit
         Model.addConstr(EV.emis_amount+GV.emis_amount<=(1-Setting.emis_reduc_goal)*Setting.CO2_emission_1990);
 
     if Setting.emis_case==5: # JPoNG with separate emission constraints    
         Model.addConstr(EV.emis_amount<=(1-Setting.emis_reduc_goal)*Setting.e_emis_lim);
         Model.addConstr(GV.emis_amount<=(1-Setting.emis_reduc_goal)*Setting.g_emis_lim);
-        #Model.addConstrs(GV.RNG_use[k,tau]==0 for k in range(nG) for tau in Tg);
-        
-
+        #Model.addConstrs(GV.LCDF_inj[k,tau]==0 for k in range(nG) for tau in Tg);
 
 def Get_var_vals(Model):
     
@@ -453,10 +459,10 @@ def Get_var_vals(Model):
     GV.Zg_val = Model.getAttr('x',GV.Zg);
     GV.ZgOp_val = Model.getAttr('x',GV.ZgOp);
     GV.ZgDec_val = Model.getAttr('x',GV.ZgDec);
-    GV.supply_val = Model.getAttr('x',GV.supply);
-    #GV.RNG_supply_val = Model.getAttr('x',GV.supply);
+    GV.ng_inj_val = Model.getAttr('x',GV.ng_inj);
+    #GV.RNG_supply_val = Model.getAttr('x',GV.ng_inj);
     GV.Shed_val = Model.getAttr('x',GV.Shed);
-    GV.RNG_use_val = Model.getAttr('x',GV.RNG_use);
+    GV.LCDF_inj_val = Model.getAttr('x',GV.LCDF_inj);
     GV.flowGE_val = Model.getAttr('x',GV.flowGE);
     GV.g_system_cost_val = GV.g_system_cost.X;
     GV.flowGL_val = Model.getAttr('x',GV.flowGL);
@@ -467,7 +473,7 @@ def Get_var_vals(Model):
 
     
     
-    GV.RNG_cost_val = GV.RNG_cost.X;
+    GV.LCDF_cost_val = GV.LCDF_cost.X;
     GV.fom_str_cost_val = GV.fom_str_cost.X;
     GV.shed_cost_val = GV.shed_cost.X;
     GV.inv_pipe_cost_val = GV.inv_pipe_cost.X;
@@ -475,7 +481,9 @@ def Get_var_vals(Model):
     GV.pipe_Decom_cost_val = GV.pipe_Decom_cost.X;
     GV.emis_amount_val = GV.emis_amount.X;
     GV.inv_str_cost_val = GV.inv_str_cost.X;
-    
+    if Setting.print_all_vars:
+        GV.marginal_prices_val = Model.getAttr('Pi',GV.marginal_prices);
+
 
 def Publish_results(s_time,MIP_gap):
     num_e_str1 = 0; str_lev1 = 0;str_cap1=0;
@@ -519,14 +527,14 @@ def Publish_results(s_time,MIP_gap):
     [num_decom_pipe := num_decom_pipe+1 if GV.ZgDec_val[p]>0 else num_decom_pipe+0 for p in range(nPipe)];
 
     [total_ng_shed := total_ng_shed+GV.Shed_val[n,tau] for n in range(nG) for tau in FY];
-    [total_rng := total_rng+GV.RNG_use_val[n,tau] for n in range(nG) for tau in FY];
+    [total_rng := total_rng+GV.LCDF_inj_val[n,tau] for n in range(nG) for tau in FY];
     #total_rng = total_rng/Setting.poss_gas_consump;
     [total_fge := total_fge+GV.flowGE_val[j,n,tau] for j in range(nG) for n in range(nE) for tau in FY];
     [total_fgl := total_fgl+GV.flowGL_val[k,j,tau] for j in range(nSVL) for k in range(nG) for tau in FY];
     elapsed = time.time()-s_time;
     header0 = ['Power_network_size','cluster_method','Base_Year','Rep-Days',
                'Emis-case','Elec_scenario', 'reduc-goal','RPS','UC-active?',
-              'UC-rlx?','int-vars-rlx?','Metal-air-cost',
+              'UC-rlx?','int-vars-rlx?','copper_plate?','Metal-air-cost',
               'MI-gap(%)', 'Run time(sec)','Total-cost',
               'Power-cost','est-cost','decom-cost','FOM','VOM',
               'nuc-fuel-cost','gas-fuel-cost','startup-cost','e-shed-cost',
@@ -551,6 +559,7 @@ def Publish_results(s_time,MIP_gap):
     row.append(Setting.emis_reduc_goal);
     row.append(Setting.VRE_share);row.append(Setting.UC_active);
     row.append(Setting.relax_UC_vars);row.append(Setting.relax_int_vars);
+    row.append(Setting.copper_plate_approx);
     row.append(Setting.Metal_air_storage_cost);
     row.append(MIP_gap);row.append(elapsed);
     row.append(EV.e_system_cost_val+GV.g_system_cost_val);
@@ -571,7 +580,7 @@ def Publish_results(s_time,MIP_gap):
     row.append(total_flow);
 
     row.append(GV.g_system_cost_val);row.append(GV.import_cost_val);
-    row.append(GV.RNG_cost_val);
+    row.append(GV.LCDF_cost_val);
     row.append(GV.inv_str_cost_val);
     row.append(GV.fom_str_cost_val);row.append(GV.shed_cost_val);
     row.append(GV.inv_pipe_cost_val);
@@ -616,6 +625,9 @@ def Publish_results(s_time,MIP_gap):
         for g in range(nG): header.append(str(g));
         header.append('LCDF_supply');
         for g in range(nG): header.append(str(g));
+        header.append('Gas_Sheddig');
+        for g in range(nG): header.append(str(g));
+        
         header.append('nodal_generation:');
         for p in pls: header.append(p);
         header.append('nodal_plt_est:');
@@ -662,13 +674,17 @@ def Publish_results(s_time,MIP_gap):
         col += 4;
         for tau in FY:
             for k in range(nG):
-                row0[tau][k+col] = GV.supply_val[k,tau];
+                row0[tau][k+col] = GV.ng_inj_val[k,tau];
             
         col += nG+1;
         for tau in FY:
             for k in range(nG):                
-                row0[tau][k+col] = GV.RNG_use_val[k,tau];            
+                row0[tau][k+col] = GV.LCDF_inj_val[k,tau];            
         col += nG+1;               
+        for tau in FY:
+            for k in range(nG):                
+                row0[tau][k+col] = GV.Shed_val[k,tau];            
+        col += nG+1; 
         
         for n in range(nE):
             for i in range(nPlt):
@@ -695,8 +711,8 @@ def Publish_results(s_time,MIP_gap):
         #         row0[t][col+n] = np.round(EV.kappa_capt_val[n,t],1);        
         # col += nE;
         for k in range(nG):
-            for tau in Tg:
-                row0[tau][col+k] = GV.marginal_prices_val[k,g_rep_days[tau]];
+            for tau in FY:
+                row0[tau][col+k] = GV.marginal_prices_val[k,tau];
                 
         with open(name,'a',encoding='UTF8',newline='') as fid:
             writer=csv.writer(fid);
@@ -890,9 +906,9 @@ def Get_marginal_prices():
     GV.Sstr = Model.addVars(nSVL,len(FY),vtype = GRB.CONTINUOUS);
     GV.Svpr = Model.addVars(nSVL,len(FY),vtype = GRB.CONTINUOUS);
     GV.Sliq = Model.addVars(nSVL,len(FY),vtype = GRB.CONTINUOUS);
-    GV.supply = Model.addVars(nG,len(FY),vtype = GRB.CONTINUOUS);
+    GV.ng_inj = Model.addVars(nG,len(FY),vtype = GRB.CONTINUOUS);
     GV.Shed =  Model.addVars(nG,len(FY),vtype = GRB.CONTINUOUS);
-    GV.RNG_use = Model.addVars(nG,len(FY),vtype = GRB.CONTINUOUS);
+    GV.LCDF_inj = Model.addVars(nG,len(FY),vtype = GRB.CONTINUOUS);
     GV.flowGG =  Model.addVars(nPipe,len(FY),vtype = GRB.CONTINUOUS);
     GV.flowGE =  Model.addVars(nG,nE,len(FY),vtype = GRB.CONTINUOUS);
     GV.flowGL =  Model.addVars(nG,nSVL,len(FY),vtype = GRB.CONTINUOUS);
@@ -903,7 +919,7 @@ def Get_marginal_prices():
     GV.pipe_FOM_cost = Model.addVar(vtype=GRB.CONTINUOUS);
     GV.pipe_Decom_cost = Model.addVar(vtype=GRB.CONTINUOUS);
     GV.shed_cost = Model.addVar(vtype=GRB.CONTINUOUS);
-    GV.RNG_cost = Model.addVar(vtype=GRB.CONTINUOUS);
+    GV.LCDF_cost = Model.addVar(vtype=GRB.CONTINUOUS);
     GV.fom_str_cost = Model.addVar(vtype=GRB.CONTINUOUS);
     GV.import_cost = Model.addVar(vtype=GRB.CONTINUOUS);
     GV.emis_amount = Model.addVar(vtype=GRB.CONTINUOUS);
@@ -911,11 +927,11 @@ def Get_marginal_prices():
     
     # NG System Objective Function
     inv_pipe = LinExpr(quicksum(PipeLines[b].inv_coef*PipeLines[b].length*Other_input.pipe_per_mile*GV.Zg_val[b] for b in range(nPipe)));   
-    ng_import = LinExpr(quicksum(GV.supply[k,tau]*Other_input.NG_price for k in range(nG) for tau in FY));
+    ng_import = LinExpr(quicksum(GV.ng_inj[k,tau]*Other_input.NG_price for k in range(nG) for tau in FY));
     storage_inv = LinExpr(quicksum(SVLs[0].inv_coef*(SVLs[0].capex*GV.Xstr[j]+SVLs[1].capex*GV.Xvpr[j]) for j in range(nSVL)));
     storage_FOM = LinExpr(quicksum(SVLs[1].FOM*(Exist_SVL[j].vap_cap+GV.Xvpr[j])+SVLs[0].FOM*(Exist_SVL[j].str_cap+GV.Xstr[j]) for j in range(nSVL)));
     ng_shed = LinExpr(quicksum(Setting.g_shed_penalty*GV.Shed[k,tau] for k in range(nG) for tau in FY));
-    rng_import = LinExpr(quicksum(Other_input.RNG_price*GV.RNG_use[k,tau]for k in range(nG) for tau in FY));
+    rng_import = LinExpr(quicksum(Other_input.RNG_price*GV.LCDF_inj[k,tau]for k in range(nG) for tau in FY));
     pipe_FOM = LinExpr(quicksum(PipeLines[b].FOM*PipeLines[b].length*GV.ZgOp_val[b] for b in range(nPipe)));  
     pipe_Dec = LinExpr(quicksum(PipeLines[b].decom*PipeLines[b].length*GV.ZgDec_val[b] for b in range(nPipe)));  
     
@@ -925,7 +941,7 @@ def Get_marginal_prices():
     Model.addConstr(GV.inv_str_cost==storage_inv);
     Model.addConstr(GV.fom_str_cost==storage_FOM);
     Model.addConstr(GV.shed_cost==ng_shed);
-    Model.addConstr(GV.RNG_cost==rng_import);
+    Model.addConstr(GV.LCDF_cost==rng_import);
     Model.addConstr(GV.pipe_FOM_cost == pipe_FOM);
     Model.addConstr(GV.pipe_Decom_cost == pipe_Dec);
     Model.addConstr(GV.g_system_cost==ng_total_cost);
@@ -936,23 +952,23 @@ def Get_marginal_prices():
     Model.addConstrs(GV.flowGG[i,tau]<=PipeLines[i].Cap for i in range(nPipe) for tau in FY if PipeLines[i].is_exist==1);
     Model.addConstrs(GV.flowGG[i,tau]<=PipeLines[i].Cap*GV.Zg_val[i] for i in range(nPipe) for tau in FY if PipeLines[i].is_exist==0);
     
-    # C3: flow balance, NG node (no shedding allowed as RNG is considered)
-    GV.marginal_prices = Model.addConstrs(GV.supply[k,tau]
+    # C3: flow balance, NG node (no shedding allowed as LCDF is considered)
+    GV.marginal_prices = Model.addConstrs(GV.ng_inj[k,tau]
                       -quicksum(GV.flowGG[l,tau] for l in Gnodes[k].L_exp)
                       +quicksum(GV.flowGG[l,tau] for l in Gnodes[k].L_imp)
                       -quicksum(GV.flowGE[k,n,tau] for n in Gnodes[k].adjE)
                       +quicksum((GV.flowVG[j,k,tau]-GV.flowGL[k,j,tau]) for j in Gnodes[k].adjS)
                       +GV.Shed[k,tau]
-                      +GV.RNG_use[k,tau]
+                      +GV.LCDF_inj[k,tau]
                      == Gnodes[k].demand[tau] for k in range(nG) for tau in FY);                             
     
     # inforce all flowGE of the same cluster to take the equal values
     Model.addConstrs(GV.flowGE[k,n,tau]==GV.flowGE[k,n,days2Medoid[tau]] for k in range(nG) for n in Gnodes[k].adjE for tau in FY)
     
     # C3,C4: injection (supply) limit and curtailment limit
-    Model.addConstrs(GV.supply[k,tau]<= Gnodes[k].injU for k in range(nG) for tau in FY);    
-    Model.addConstrs(GV.Shed[k,tau]+GV.RNG_use[k,tau]<= Gnodes[k].demand[tau] for k in range(nG) for tau in FY);
-    Model.addConstrs(GV.RNG_use[k,tau]<= Gnodes[k].injU for k in range(nG) for tau in FY);   
+    Model.addConstrs(GV.ng_inj[k,tau]<= Gnodes[k].injU for k in range(nG) for tau in FY);    
+    Model.addConstrs(GV.Shed[k,tau]+GV.LCDF_inj[k,tau]<= Gnodes[k].demand[tau] for k in range(nG) for tau in FY);
+    Model.addConstrs(GV.LCDF_inj[k,tau]<= Gnodes[k].injU for k in range(nG) for tau in FY);   
 
      
     # C5: storage balance (storage strats empty)
@@ -1017,29 +1033,4 @@ def Get_marginal_prices():
     #print(ng_cost);
     if Setting.emis_case!=1:
         EV.gas_fuel_cost_val = ng_cost;
-    
-#     ng_costp = 0;NG_units = ["ng","CT","CC","CC-CCS"];
-    
-#     for t in Te:
-#         for i in range(nPlt):
-#             for n in range(nE):
-#                 if plant2sym[i] in NG_units:
-#                     ng_costp += Other_input.NG_price*e_time_weight[t]*Plants[i].heat_rate*EV.prod_val[n,t,i];
-#     print(ng_costp);
-    
-#     # test the coupling constraint 1
-# #(quicksum(GV.flowGE[k,n,g_rep_days[tau]] for k in range(nG) if n in Gnodes[k].adjE)==quicksum(Plants[i].heat_rate*EV.prod[n,t,i] for t in range(tau*24,(tau+1)*24) for i in range(nPlt) if plant2sym[i] in NG_units) for n in range(nE) for tau in Tg);
-#     for n in range(nE):
-#         for tau in Tg:
-#             ssr=0;
-#             for t in range(tau*24,(tau+1)*24):
-#                 for i in range(nPlt):
-#                     if plant2sym[i] in NG_units:
-#                         ssr += Plants[i].heat_rate*EV.prod_val[n,t,i];
-#             ssl=0;
-#             for k in range(nG):
-#                 if n in Gnodes[k].adjE:
-#                     ssl += GV.flowGE_val[k,n,g_rep_days[tau]];
-             
-#             print(f"lhs: {ssl}, rhs: {ssr}");
     

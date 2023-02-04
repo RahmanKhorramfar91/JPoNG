@@ -40,30 +40,32 @@ if __name__ == "__main__":
     
     folder = 'joint_CF_with_extreme_days';
     net_size = 17;
-    rep_days = [5,10,15];
+    BY = np.array([2004,2011,2020]);
+    rep_days = [3];
     #rep_days = np.insert(rep_days,len(rep_days),365);
     case = [4];
     elec_scen = ['HE','HX','ME','RF'];
     emis_reduc_goal = [0.8,0.85,0.9,0.95];
     VRE_share = [0.5];
-    solver_gap = 0.001;
-    wall_clock_time_lim = 10; #hours;
+    solver_gap = 0.01;
+    wall_clock_time_lim = 1; #hours;
     UC_active = 1;
     relax_UC_vars = 1;
     relax_int_vars = 0;
-    solver_thread_num = 4;
+    solver_thread_num = 2;
     metal_air_cost = ['no-metal-air'];
     param_list=[];
     SuperClound_Thread = 96;
-    for i2 in case:
-        for i1 in rep_days:
-            for i4 in emis_reduc_goal:
-                for i3 in elec_scen:            
-                    for i5 in VRE_share:
-                        for i6 in metal_air_cost:                            
-                            param = 'python Main.py '+folder+' '+str(net_size)+' '+ str(i1)+' '+str(i2)+' '+str(i3)+' '+str(i4)+' '+str(i5)+' '+str(solver_gap)+' '+str(wall_clock_time_lim)+' '+str(UC_active)+' '+str(relax_UC_vars)+' '+str(relax_int_vars)+' '+str(solver_thread_num)+' '+i6;
-                            param_list.append(param);
-                        #print(param)
+    for i0 in BY:
+        for i2 in case:
+            for i1 in rep_days:
+                for i4 in emis_reduc_goal:
+                    for i3 in elec_scen:            
+                        for i5 in VRE_share:
+                            for i6 in metal_air_cost:
+                                param = 'python Main.py '+folder+' '+str(net_size)+' ' +str(i0) +' '+ str(i1)+' '+str(i2)+' '+str(i3)+' '+str(i4)+' '+str(i5)+' '+str(solver_gap)+' '+str(wall_clock_time_lim)+' '+str(UC_active)+' '+str(relax_UC_vars)+' '+str(relax_int_vars)+' '+str(solver_thread_num)+' '+i6;
+                                param_list.append(param);                                
+
     del i1,i2,i3,i4,i5;       
     #print(param_list)
     for i in range(int(np.ceil(solver_thread_num*len(param_list)/SuperClound_Thread))):
