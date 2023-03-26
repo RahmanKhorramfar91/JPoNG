@@ -245,6 +245,8 @@ def Power_System_Model(Model):
     Model.addConstr(quicksum(Plants[sym2plant['wind-new']].nameplate_cap*EV.Xop[n,sym2plant['wind-new']]+Plants[sym2plant['wind']].nameplate_cap*EV.Xop[n,sym2plant['wind']] for n in range(nE) )<= Other_input.type_prod_lim[1]);
     Model.addConstr(quicksum(Plants[sym2plant['wind-offshore-new']].nameplate_cap*EV.Xop[n,sym2plant['wind-offshore-new']] for n in range(nE) )<= Other_input.type_prod_lim[2]);
     Model.addConstr(quicksum(Plants[sym2plant['nuclear-new']].nameplate_cap*EV.Xop[n,sym2plant['nuclear-new']]+Plants[sym2plant['nuclear']].nameplate_cap*EV.Xop[n,sym2plant['nuclear']] for n in range(nE) )<= Other_input.type_prod_lim[3]);
+    Model.addConstr(quicksum(Plants[sym2plant['hydro']].nameplate_cap*EV.Xop[n,sym2plant['hydro']] for n in range(nE) )<= Other_input.type_prod_lim[4]);
+
     # CSS constraints
     Model.addConstrs(EV.kappa_capt[n,t]==Other_input.NG_emission*(Plants[sym2plant['CCGT-CCS']].co2_capture_rate)*Plants[sym2plant['CCGT-CCS']].heat_rate*EV.prod[n,t,sym2plant['CCGT-CCS']] for n in range(nE) for t in Te);    
     Model.addConstrs(EV.kappa_pipe[n] >= EV.kappa_capt[n,t] for n in range(nE) for t in Te);
@@ -362,7 +364,7 @@ def NG_System_Model(Model): # for the full year
     Model.addConstrs(GV.Sstr[j,tau]<=Exist_SVL[j].str_cap+GV.Xstr[j] for j in range(nSVL) for tau in FY);
     
     # C11: Operational Pipelines
-    Model.addConstrs(GV.ZgOp[b] == PipeLines[b].is_exist-GV.ZgDec[b] for b in range(nPipe) if PipeLines[b].is_exist==1);
+    Model.addConstrs(GV.ZgOp[b] == 1-GV.ZgDec[b] for b in range(nPipe) if PipeLines[b].is_exist==1);
     Model.addConstrs(GV.ZgOp[b] == GV.Zg[b] for b in range(nPipe) if PipeLines[b].is_exist==0);
 
     
@@ -458,7 +460,7 @@ def Get_var_vals(Model):
     
     GV.Zg_val = Model.getAttr('x',GV.Zg);
     GV.ZgOp_val = Model.getAttr('x',GV.ZgOp);
-    GV.ZgDec_val = Model.getAttr('x',GV.ZgDec);
+    GV.ZgDec_val = Model.getAttr('x',GV.ZgDec);       
     GV.ng_inj_val = Model.getAttr('x',GV.ng_inj);
     #GV.RNG_supply_val = Model.getAttr('x',GV.ng_inj);
     GV.Shed_val = Model.getAttr('x',GV.Shed);
@@ -481,8 +483,8 @@ def Get_var_vals(Model):
     GV.pipe_Decom_cost_val = GV.pipe_Decom_cost.X;
     GV.emis_amount_val = GV.emis_amount.X;
     GV.inv_str_cost_val = GV.inv_str_cost.X;
-    if Setting.print_all_vars:
-        GV.marginal_prices_val = Model.getAttr('Pi',GV.marginal_prices);
+    # if Setting.print_all_vars:
+    #     GV.marginal_prices_val = Model.getAttr('Pi',GV.marginal_prices);
 
 
 def Publish_results(s_time,MIP_gap):
@@ -586,7 +588,8 @@ def Publish_results(s_time,MIP_gap):
     row.append(GV.inv_pipe_cost_val);
     row.append(GV.pipe_FOM_cost_val);row.append(GV.pipe_Decom_cost_val);
     row.append(GV.emis_amount_val);
-    row.append(num_est_pipe);row.append(num_decom_pipe); row.append(num_op_pipe);
+    row.append(num_est_pipe);
+    row.append(num_decom_pipe); row.append(num_op_pipe);
     row.append(total_ng_shed);
     row.append(total_rng);row.append(total_fge);row.append(total_fgl);
     row.append('Production:');
@@ -607,9 +610,7 @@ def Publish_results(s_time,MIP_gap):
         writer.writerow(row);
         f.close();
     
-    name =os.getcwd()+'/'+ str(Setting.Power_network_size)+'-'+ str(Setting.num_rep_days)+'-'+Setting.electrification_scenario+'-'+str(Setting.emis_case)+'-'+str(Setting.emis_reduc_goal)+'-'+str(Setting.VRE_share)+'.csv';
-
-    
+    name =os.getcwd()+'/'+ str(Setting.Power_network_size)+'-'+ str(Setting.num_rep_days)+'-'+Setting.electrification_scenario+'-'+str(Setting.emis_case)+'-'+str(Setting.emis_reduc_goal)+'-'+str(Setting.VRE_share)+'-'+str(Setting.base_year)+'.csv'; 
 
     if Setting.print_all_vars:
         pls = ['ng','solar','wind','hydro','nuclear','OCGT','CCGT','CCGT-CCS','solar-UPV','wind-new','wind-offshore','nuclear-new'];
@@ -647,15 +648,15 @@ def Publish_results(s_time,MIP_gap):
                 r0 = [EV.prod_val[n,t,i]  for n in range(nE)];                
                 row0[t][i+col] = np.round(sum(r0));
             r0 = [EV.eSch_val[n,t,0] for n in range(nE)];            
-            row0[t][nPlt] = np.round(sum(r0));
-            r0 = [EV.eSdis_val[n,t,0] for n in range(nE)];            
             row0[t][nPlt+1] = np.round(sum(r0));
+            r0 = [EV.eSdis_val[n,t,0] for n in range(nE)];            
+            row0[t][nPlt+2] = np.round(sum(r0));
             
             if Setting.Metal_air_storage_cost!='no-metal-air':
                 r0 = [EV.eSch_val[n,t,1] for n in range(nE)];            
-                row0[t][nPlt+2] = np.round(sum(r0));
-                r0 = [EV.eSdis_val[n,t,1] for n in range(nE)];            
                 row0[t][nPlt+3] = np.round(sum(r0));
+                r0 = [EV.eSdis_val[n,t,1] for n in range(nE)];            
+                row0[t][nPlt+4] = np.round(sum(r0));
                 
         col = nPlt+5;#charge and discharge              
         for p in range(nPipe):            
@@ -710,11 +711,11 @@ def Publish_results(s_time,MIP_gap):
         #     for t in Te:
         #         row0[t][col+n] = np.round(EV.kappa_capt_val[n,t],1);        
         # col += nE;
-        for k in range(nG):
-            for tau in FY:
-                row0[tau][col+k] = GV.marginal_prices_val[k,tau];
+        # for k in range(nG):
+        #     for tau in FY:
+        #         row0[tau][col+k] = GV.marginal_prices_val[k,tau];
                 
-        with open(name,'a',encoding='UTF8',newline='') as fid:
+        with open(name,'w',encoding='UTF8',newline='') as fid:
             writer=csv.writer(fid);
             writer.writerow(header0);
             writer.writerow(row);

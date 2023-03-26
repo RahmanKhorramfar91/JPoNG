@@ -21,9 +21,9 @@ import os;
 def time_weights(nD,fName):   
     #df = pd.read_csv(os.getcwd()+r'\Rep_Days\num_rep_days='+str(nD)+'.csv');
     #df = pd.read_csv(os.getcwd() + '/' + fName+'/'+fName +'_medians_k='+str(nD)+'.csv');
-    df = pd.read_csv(os.getcwd() + '/' + fName+'/'+fName +'_k='+str(nD)+'.csv');
+    df = pd.read_csv(os.getcwd() + '/' + fName+'/Rep-Days-Year='+str(Setting.base_year)+'/cluster_year='+str(Setting.base_year)+'_days='+str(nD)+'.csv');
 
-    s1 = df[df['Medoid']==1];
+    s1 = df[df['is_medoid?']==1];
     s2 = s1.sort_values(['Cluster']);
     g_rep_days = np.array(s2.index);    
     e_time_weight = np.zeros(24*nD,dtype=int);
@@ -71,8 +71,8 @@ df_ePlt = pd.read_csv(Pow_dir+'/Plants_Nodes.csv');
 df_br = pd.read_csv(Pow_dir+'/Transmission_Lines.csv');
 df_eDem = pd.read_csv(Pow_dir+'/Electricity_Load_'+Setting.electrification_scenario+ '_BaseYear'+str(Setting.base_year)+'.csv');
 df_solar = pd.read_csv(Pow_dir+'/AvailabilityFactors_Solar_'+str(Setting.base_year)+'.csv'); 
-df_wind = pd.read_csv(Pow_dir+'/AvailabilityFactors_Wind_Onshore.csv'); 
-df_wind_offshore = pd.read_csv(Pow_dir+'/AvailabilityFactors_Wind_Offshore.csv'); 
+df_wind = pd.read_csv(Pow_dir+'/AvailabilityFactors_Wind_Onshore_'+str(Setting.base_year)+'.csv'); 
+df_wind_offshore = pd.read_csv(Pow_dir+'/AvailabilityFactors_Wind_Offshore_'+str(Setting.base_year)+'.csv'); 
 df_reg_mult = pd.read_csv(Pow_dir+'/Regional_multipliers.csv');
 df_plt = pd.read_csv(Pow_dir+'/Plant_params.csv');
 df_str = pd.read_csv(Pow_dir+'/Storage_params.csv');
@@ -89,7 +89,7 @@ df_svl_params = pd.read_csv(Gas_dir+'/SVL_params.csv');
 
 #%% other parameters
 class other_prm():
-    type_prod_lim = np.array(dfo['resource_avail (solar,wind,offshore,nuclear)[MW]'].iloc[:4]);# [22e3, 10e3, 280e3,3.5e3]; # 10e6 means no limit
+    type_prod_lim = np.array(dfo['resource_avail (solar,wind,offshore,nuclear,hydro)[MW]'].iloc[:5]);# [22e3, 10e3, 280e3,3.5e3,2.6e3]; # 10e6 means no limit
     SVL_lifetime = int(dfo['SVL_lifetime'][0]);
     pipeline_lifetime = int(dfo['pipeline_lifetime'][0]);
     WACC = float(dfo['WACC'][0]);
@@ -129,15 +129,15 @@ for i in range(len(df_ebus)):
     en.num = i;
     en.lat_lon = np.array([df_ebus['Lat'].iloc[i],df_ebus['Lon'].iloc[i]]);
     en.Init_plt_type = sym2plant.keys();
-    en.offshore_allowd = df_ebus['Offshore_wind_allowd'].iloc[i];
+    en.offshore_allowd = df_ebus['Offshore_wind_allowed'].iloc[i];
     en.Init_plt_count = np.zeros(len(sym2plant.keys()),dtype=int);    
     en.demand = np.array(df_eDem[str(i)]); # directly using 2050 load
     en.cap_factors = np.ones((8760,len(sym2plant.keys())));
-    en.cap_factors[:,sym2plant['solar']] = np.array(df_solar[str(i)]);
-    en.cap_factors[:,sym2plant['solar-UPV']] = np.array(df_solar[str(i)]);
-    en.cap_factors[:,sym2plant['wind']] = np.array(df_wind[str(i)]);
-    en.cap_factors[:,sym2plant['wind-new']] = np.array(df_wind[str(i)]);
-    en.cap_factors[:,sym2plant['wind-offshore-new']] = np.array(df_wind_offshore[str(i)]); 
+    en.cap_factors[:,sym2plant['solar']] = np.array(df_solar.iloc[:,i]);
+    en.cap_factors[:,sym2plant['solar-UPV']] = np.array(df_solar.iloc[:,i]);
+    en.cap_factors[:,sym2plant['wind']] = np.array(df_wind.iloc[:,i]);
+    en.cap_factors[:,sym2plant['wind-new']] = np.array(df_wind.iloc[:,i]);
+    en.cap_factors[:,sym2plant['wind-offshore-new']] = np.array(df_wind_offshore.iloc[:,i]); 
     Enodes.append(en);
     
 for i in range(len(df_ePlt)):

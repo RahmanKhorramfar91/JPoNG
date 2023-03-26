@@ -19,16 +19,16 @@ import sys;
 #import Modules;
 #%% Set Default Setting for the Porblem 
 Setting.Power_network_size = 17; 
-Setting.base_year = 2004;
-Setting.rep_day_folder = 'joint_CF_with_extreme_days';#extreme_days
+Setting.base_year = 2001;
+Setting.rep_day_folder = 'Representative Days';#extreme_days
 Setting.num_rep_days = 2;
 Setting.emis_case = 2;
-Setting.electrification_scenario = 'HE';   # HE, HX, ME, RF, and Historical
+Setting.electrification_scenario = 'MX';   # HE, HX, ME, RF, and Historical
 Setting.emis_reduc_goal = 0.8; 
 Setting.VRE_share = 0.5;
 Setting.solver_gap = 0.01;
 Setting.wall_clock_time_lim = 1; #hour
-Setting.UC_active = 1;
+Setting.UC_active = 0;
 Setting.relax_UC_vars = True;
 Setting.relax_int_vars = 0;
 Setting.solver_thread_num = 6;
@@ -59,14 +59,9 @@ Setting.expansion_allowed = 1;
 Setting.CRM_reserve = 0.15; # as recommended by NERC
 Setting.wall_clock_time_lim = Setting.wall_clock_time_lim*3600; # convert to second for Gurobi
 Setting.print_result_header = 0;
-Setting.copper_plate_approx = 0; 
+Setting.copper_plate_approx = 1; 
 Setting.print_all_vars = 1;
 s_time = time.time();
-
-
-#%% recall the heuristic to obtain an approximate solution
-# import Heuristic;
-
 
 #%% create and recall and run the modules
 Model = gp.Model();
