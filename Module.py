@@ -6,9 +6,9 @@ Power system on hourly resolution and NG on daily
 
 """
 from Setting import Setting;
-from SystemClasses import EV,GV;
+from SystemClasses import EV,GV,QC;
 import os;import time;import csv;
-from ProblemData import Enodes,Gnodes,Branches,CC_CCS;
+from ProblemData import Enodes,Gnodes,Branches,CC_CCS,QCdat;
 from ProblemData import PipeLines,Plants,eStore,Other_input,state2zone_id,plant2sym;
 from ProblemData import sym2plant,time_weights,zone_id2state,Exist_SVL,SVLs;
 
@@ -33,7 +33,8 @@ FY = np.arange(365);
 thermal_units = ["ng","OCGT","CCGT","CCGT-CCS","nuclear","nuclear-new"];
 NG_units = ["ng","OCGT","CCGT","CCGT-CCS"];
 VRE = ["solar","wind","wind-offshore-new","solar-UPV","wind-new"];# hydro not included
-
+Tqc = len(QCdat.demand);
+nNE= len(QCdat.NE_nodes);
 def Power_System_Model(Model):    
     #% define decision variables 
     EV.Xop = Model.addVars(nE,nPlt,vtype=GRB.CONTINUOUS);
@@ -81,10 +82,23 @@ def Power_System_Model(Model):
     
     EV.flowE =  Model.addVars(nBr,len(Te),lb=np.zeros((nBr,len(Te)))-GRB.INFINITY,ub=np.zeros((nBr,len(Te)))+GRB.INFINITY,vtype=GRB.CONTINUOUS);
     
+    #QC node variables
+    QC.eCap = Model.addVars(Tqc,vtype=GRB.CONTINUOUS);
+    QC.max_prod = Model.addVar(vtype=GRB.CONTINUOUS);
+    # QC.outflow = Model.addVars(Tqc,vtype=GRB.CONTINUOUS);
+    QC.flow_to_NE = Model.addVars(nNE,Tqc,vtype=GRB.CONTINUOUS);
+    QC.flow_from_NE = Model.addVars(nNE,Tqc,vtype=GRB.CONTINUOUS);
+    QC.prod = Model.addVars(Tqc,vtype=GRB.CONTINUOUS);
+    QC.eShed = Model.addVars(Tqc,vtype=GRB.CONTINUOUS);
+    
+    
     if Setting.expansion_allowed==False:
         Model.addConstrs(EV.Xest[n,i]==0 for n  in range(nE) for i in range(nPlt) )
         Model.addConstrs(EV.Ze[b]==0 for b in range(nBr));
+    if Setting.CCS_allowed==False:
+        Model.addConstrs(EV.Xest[n,sym2plant['CCGT-CCS']]==0 for n in range(nE));
         
+    
     EV.est_cost = Model.addVar(vtype=GRB.CONTINUOUS);
     EV.est_trans_cost = Model.addVar(vtype=GRB.CONTINUOUS);
     EV.decom_cost = Model.addVar(vtype=GRB.CONTINUOUS);
@@ -100,7 +114,7 @@ def Power_System_Model(Model):
     EV.CCS_cost =  Model.addVar(vtype=GRB.CONTINUOUS);
     EV.trans_FOM_cost =  Model.addVar(vtype=GRB.CONTINUOUS);
     EV.e_system_cost=Model.addVar(vtype=GRB.CONTINUOUS);
-    
+    QC.cost=Model.addVar(vtype=GRB.CONTINUOUS);
     
     #% Set some variables
     #1) existing types can not be established because there are new equivalent types
@@ -138,13 +152,17 @@ def Power_System_Model(Model):
     tran_cost = LinExpr(quicksum(Branches[b].est_coef*Other_input.trans_unit_cost*Branches[b].maxFlow*Branches[b].length*EV.Ze[b] for b in range(nBr)));
     trans_Fom = LinExpr(quicksum(Branches[b].trans_FOM*Branches[b].maxFlow*Branches[b].length for b in range(nBr) if Branches[b].is_exist==1));
     trans_Fom += LinExpr(quicksum(Branches[b].trans_FOM*Branches[b].maxFlow*Branches[b].length*EV.Ze[b] for b in range(nBr) if Branches[b].is_exist==0));
+    hydro_QC_cost = 0;
+    if Setting.hydro_QC==1:
+        hydro_QC_cost += LinExpr(QCdat.FOM_cost*QC.max_prod+quicksum(QC.eShed[t]*Setting.e_shed_penalty for t in range(Tqc)));
+
     # total power system cost function
     if Setting.emis_case==1: # add gas fuel cost only if Case=0 (power system only)
-        e_total_cost = gas_fuel_cost+est_cost+dec_cost+fom_cost+vom_cost+nuc_fuel_cost+ccs_cost+startup_cost+shed_cost+strg_cost1+strg_cost2+tran_cost+trans_Fom;
+        e_total_cost =hydro_QC_cost+ gas_fuel_cost+est_cost+dec_cost+fom_cost+vom_cost+nuc_fuel_cost+ccs_cost+startup_cost+shed_cost+strg_cost1+strg_cost2+tran_cost+trans_Fom;
     else:
-        e_total_cost = est_cost+dec_cost+fom_cost+vom_cost+nuc_fuel_cost+ccs_cost+startup_cost+shed_cost+strg_cost1+strg_cost2+tran_cost+trans_Fom;
-
-    #e_total_cost = est_cost+dec_cost+fom_cost+vom_cost+shed_cost;
+        e_total_cost =hydro_QC_cost+ est_cost+dec_cost+fom_cost+vom_cost+nuc_fuel_cost+ccs_cost+startup_cost+shed_cost+strg_cost1+strg_cost2+tran_cost+trans_Fom;
+    
+        #e_total_cost = est_cost+dec_cost+fom_cost+vom_cost+shed_cost;
     
     Model.addConstr(EV.est_cost == est_cost);
     Model.addConstr(EV.decom_cost == dec_cost);
@@ -160,7 +178,7 @@ def Power_System_Model(Model):
     Model.addConstr(EV.gas_fuel_cost == gas_fuel_cost);
     Model.addConstr(EV.CCS_cost == ccs_cost);
     Model.addConstr(EV.e_system_cost == e_total_cost);    
-    
+    Model.addConstr(QC.cost == hydro_QC_cost);    
     #% Electricity System Constraints
     # C1: number of generation units at each node
     Model.addConstrs(EV.Xop[n,i] == Enodes[n].Init_plt_count[i]+EV.Xest[n,i]-EV.Xdec[n,i] for n in range(nE) for i in range(nPlt));
@@ -189,13 +207,19 @@ def Power_System_Model(Model):
     Model.addConstrs(EV.flowE[b,t]<=Branches[b].maxFlow*EV.Ze[b] for b in range(nBr) for t in Te if(Branches[b].is_exist==0));
     Model.addConstrs(-EV.flowE[b,t]<=Branches[b].maxFlow*EV.Ze[b] for b in range(nBr) for t in Te if(Branches[b].is_exist==0))
     
-    # C7: power balance  
-    
-    if Setting.copper_plate_approx:
-        Model.addConstrs(quicksum(EV.prod[n,t,i] for i in range(nPlt) for n in range(nE))+quicksum(EV.eSdis[n,t,r]-EV.eSch[n,t,r] for r in range(neSt) for n in range(nE))+quicksum(EV.Shed[n,t] for n in range(nE)) == quicksum(Enodes[n].demand[e_rep_hrs[t]]+CC_CCS.node2str_dis[n]*CC_CCS.elec_req_pipe*EV.kappa_pipe[n] + (CC_CCS.node2str_dis[n]/CC_CCS.comp_dis)*CC_CCS.elec_req_pump*EV.kappa_capt[n,t] for n in range(nE)) for t in Te);
-    else:        
-        Model.addConstrs(quicksum(EV.prod[n,t,i] for i in range(nPlt))-quicksum(Enodes[n].arc_sign[b]*EV.flowE[Enodes[n].arcs[b],t] for b in range(len(Enodes[n].arcs)))+quicksum(EV.eSdis[n,t,r]-EV.eSch[n,t,r] for r in range(neSt))+EV.Shed[n,t] == Enodes[n].demand[e_rep_hrs[t]]+CC_CCS.node2str_dis[n]*CC_CCS.elec_req_pipe*EV.kappa_pipe[n] + (CC_CCS.node2str_dis[n]/CC_CCS.comp_dis)*CC_CCS.elec_req_pump*EV.kappa_capt[n,t]  for n in range(nE) for t in Te);
-  
+    # C7: power balance      
+    if Setting.hydro_QC==0:
+        if Setting.copper_plate_approx:
+            Model.addConstrs(quicksum(EV.prod[n,t,i] for i in range(nPlt) for n in range(nE))+quicksum(EV.eSdis[n,t,r]-EV.eSch[n,t,r] for r in range(neSt) for n in range(nE))+quicksum(EV.Shed[n,t] for n in range(nE)) == quicksum(Enodes[n].demand[e_rep_hrs[t]]+CC_CCS.node2str_dis[n]*CC_CCS.elec_req_pipe*EV.kappa_pipe[n] + (CC_CCS.node2str_dis[n]/CC_CCS.comp_dis)*CC_CCS.elec_req_pump*EV.kappa_capt[n,t] for n in range(nE)) for t in Te);
+        else:        
+            Model.addConstrs(quicksum(EV.prod[n,t,i] for i in range(nPlt))-quicksum(Enodes[n].arc_sign[b]*EV.flowE[Enodes[n].arcs[b],t] for b in range(len(Enodes[n].arcs)))+quicksum(EV.eSdis[n,t,r]-EV.eSch[n,t,r] for r in range(neSt))+EV.Shed[n,t] == Enodes[n].demand[e_rep_hrs[t]]+CC_CCS.node2str_dis[n]*CC_CCS.elec_req_pipe*EV.kappa_pipe[n] + (CC_CCS.node2str_dis[n]/CC_CCS.comp_dis)*CC_CCS.elec_req_pump*EV.kappa_capt[n,t]  for n in range(nE) for t in Te);
+    else:
+        if Setting.copper_plate_approx:
+            Model.addConstrs(quicksum(EV.prod[n,t,i] for i in range(nPlt) for n in range(nE))+quicksum(EV.eSdis[n,t,r]-EV.eSch[n,t,r] for r in range(neSt) for n in range(nE))+quicksum(EV.Shed[n,t] for n in range(nE)) +quicksum(QC.flow_to_NE[b,e_rep_hrs[t]] -QC.flow_from_NE[b,e_rep_hrs[t]] for b in range(nNE)) == quicksum(Enodes[n].demand[e_rep_hrs[t]]+CC_CCS.node2str_dis[n]*CC_CCS.elec_req_pipe*EV.kappa_pipe[n] + (CC_CCS.node2str_dis[n]/CC_CCS.comp_dis)*CC_CCS.elec_req_pump*EV.kappa_capt[n,t] for n in range(nE)) for t in Te);
+        else:        
+            Model.addConstrs(quicksum(EV.prod[n,t,i] for i in range(nPlt))-quicksum(Enodes[n].arc_sign[b]*EV.flowE[Enodes[n].arcs[b],t] for b in range(len(Enodes[n].arcs)))+quicksum(EV.eSdis[n,t,r]-EV.eSch[n,t,r] for r in range(neSt))+EV.Shed[n,t] == Enodes[n].demand[e_rep_hrs[t]]+CC_CCS.node2str_dis[n]*CC_CCS.elec_req_pipe*EV.kappa_pipe[n] + (CC_CCS.node2str_dis[n]/CC_CCS.comp_dis)*CC_CCS.elec_req_pump*EV.kappa_capt[n,t] for t in Te for n in range(nE) if n not in QCdat.NE_nodes);            
+            Model.addConstrs(quicksum(EV.prod[n,t,i] for i in range(nPlt))-quicksum(Enodes[n].arc_sign[b]*EV.flowE[Enodes[n].arcs[b],t] for b in range(len(Enodes[n].arcs)))+quicksum(EV.eSdis[n,t,r]-EV.eSch[n,t,r] for r in range(neSt))+EV.Shed[n,t] +QC.flow_to_NE[QCdat.NE_node2line[n],e_rep_hrs[t]]-QC.flow_from_NE[QCdat.NE_node2line[n],e_rep_hrs[t]] == Enodes[n].demand[e_rep_hrs[t]]+CC_CCS.node2str_dis[n]*CC_CCS.elec_req_pipe*EV.kappa_pipe[n] + (CC_CCS.node2str_dis[n]/CC_CCS.comp_dis)*CC_CCS.elec_req_pump*EV.kappa_capt[n,t] for t in Te for n in range(nE) if n in QCdat.NE_nodes);
+
     
     # C8: flow equation
     if Setting.copper_plate_approx==False:
@@ -254,6 +278,32 @@ def Power_System_Model(Model):
 
     # capacity reserve margin constraint    
     Model.addConstrs(quicksum(Enodes[n].cap_factors[e_rep_hrs[t],i]*Plants[i].nameplate_cap*EV.Xop[n,i] for n in range(nE) for i in range(nPlt)) >= (1+Setting.CRM_reserve)*quicksum(Enodes[n].demand[e_rep_hrs[t]] for n in range(nE)) for t in Te);
+    
+    # model QC node's operations for the entire year
+    if Setting.hydro_QC==1:
+        Model.addConstr(QC.eCap[0]==QCdat.init_en_cap);
+        Model.addConstr(QC.eCap[Tqc-1]==QCdat.init_en_cap);
+        Model.addConstr(QC.eCap[2881]<=0.55*QCdat.max_en_cap); #May 1 cap
+        Model.addConstrs(QC.eCap[t]==QC.eCap[t-1]+QCdat.max_en_cap*QCdat.inflow_rate[t]-QC.prod[t] for t in range(1,Tqc));
+        Model.addConstrs(QC.prod[t]>= 0.27*QCdat.max_pow_cap for t in range(Tqc));
+        Model.addConstrs(QC.prod[t]<= QCdat.max_pow_cap for t in range(Tqc));
+        Model.addConstrs(QC.prod[t]-QC.prod[t-1]<=QCdat.ramp_rate*QCdat.max_pow_cap for t in range(1,Tqc));
+        Model.addConstrs(-QC.prod[t]+QC.prod[t-1]<=QCdat.ramp_rate*QCdat.max_pow_cap for t in range(1,Tqc));
+        
+        Model.addConstrs(QC.prod[t]<= QC.max_prod for t in range(Tqc));
+        
+        for b in range(nNE):
+            Model.addConstrs(QC.flow_from_NE[b,t]<=QCdat.line_max_flow[b] for t in range(Tqc));
+            Model.addConstrs(QC.flow_to_NE[b,t]<=QCdat.line_max_flow[b] for t in range(Tqc));
+        
+        # balance equation for QC node
+        Model.addConstrs(QC.prod[t]+QC.eShed[t]+quicksum(QC.flow_from_NE[b,t]-QC.flow_to_NE[b,t] for b in range(nNE)) == QCdat.demand[t] for t in range(Tqc));
+        
+        # to/from flows are same for periods of the same cluster
+        Model.addConstrs(QC.flow_from_NE[b,days_in_cluster[c][0]*24+h]==QC.flow_from_NE[b,d*24+h] for b in range(nNE) for c in range(Setting.num_rep_days) for d in days_in_cluster[c] for h in range(24));
+        Model.addConstrs(QC.flow_to_NE[b,days_in_cluster[c][0]*24+h]==QC.flow_to_NE[b,d*24+h] for b in range(nNE) for c in range(Setting.num_rep_days) for d in days_in_cluster[c] for h in range(24));
+        
+        
     
 def NG_System_Model(Model): # for the full year
     
@@ -452,12 +502,17 @@ def Get_var_vals(Model):
     EV.CCS_cost_val = EV.CCS_cost.X;
     EV.e_system_cost_val = EV.e_system_cost.X;
     #if Setting.emis_case==1:
-    EV.e_system_cost_val = EV.e_system_cost.X;#-EV.gas_fuel_cost.X;
+    QC.cost_val = QC.cost.X;
+    EV.e_system_cost_val = EV.e_system_cost.X-QC.cost_val;#-EV.gas_fuel_cost.X;
     
-    # print(Model.getAttr('x',EV.theta));
-    # print(Model.getAttr('x',GV.Svpr));
-    # print(Model.getAttr('x',GV.flowGG));
-    
+    if Setting.hydro_QC:
+        QC.prod_val = Model.getAttr('x',QC.prod);
+        QC.flow_from_NE_val = Model.getAttr('x',QC.flow_from_NE);
+        QC.flow_to_NE_val = Model.getAttr('x',QC.flow_to_NE);
+        QC.eCap_val = Model.getAttr('x',QC.eCap);
+        QC.eShed_val = Model.getAttr('x',QC.eShed);
+        QC.max_prod_val = QC.max_prod.X;
+        
     GV.Zg_val = Model.getAttr('x',GV.Zg);
     GV.ZgOp_val = Model.getAttr('x',GV.ZgOp);
     GV.ZgDec_val = Model.getAttr('x',GV.ZgDec);       
@@ -537,7 +592,8 @@ def Publish_results(s_time,MIP_gap):
     header0 = ['Power_network_size','cluster_method','Base_Year','Rep-Days',
                'Emis-case','Elec_scenario', 'reduc-goal','RPS','UC-active?',
               'UC-rlx?','int-vars-rlx?','copper_plate?','Metal-air-cost',
-              'MI-gap(%)', 'Run time(sec)','Total-cost',
+              'CCS-allowed?','hydro_QC_allowed?',
+              'MI-gap(%)', 'Run time(sec)', 'QC_cost' ,'Total-cost',
               'Power-cost','est-cost','decom-cost','FOM','VOM',
               'nuc-fuel-cost','gas-fuel-cost','startup-cost','e-shed-cost',
               'storage1-cost','storage2-cost','tran-est-cost','trans_FOM','CCS-cost',
@@ -563,7 +619,10 @@ def Publish_results(s_time,MIP_gap):
     row.append(Setting.relax_UC_vars);row.append(Setting.relax_int_vars);
     row.append(Setting.copper_plate_approx);
     row.append(Setting.Metal_air_storage_cost);
+    row.append(Setting.CCS_allowed);
+    row.append(Setting.hydro_QC);
     row.append(MIP_gap);row.append(elapsed);
+    row.append(QC.cost_val);
     row.append(EV.e_system_cost_val+GV.g_system_cost_val);
  
     row.append(EV.e_system_cost_val); row.append(EV.est_cost_val);
@@ -610,8 +669,12 @@ def Publish_results(s_time,MIP_gap):
         writer.writerow(row);
         f.close();
     
-    name =os.getcwd()+'/'+ str(Setting.Power_network_size)+'-'+ str(Setting.num_rep_days)+'-'+Setting.electrification_scenario+'-'+str(Setting.emis_case)+'-'+str(Setting.emis_reduc_goal)+'-'+str(Setting.VRE_share)+'-'+str(Setting.base_year)+'.csv'; 
-
+    name =os.getcwd()+'/'+ str(Setting.Power_network_size)+\
+        '-'+ str(Setting.num_rep_days)+'-'+Setting.electrification_scenario+\
+            '-'+str(Setting.emis_case)+'-'+str(Setting.emis_reduc_goal)+\
+                '-'+str(Setting.VRE_share)+'-'+str(Setting.base_year)+\
+                    '-CCS'+str(Setting.CCS_allowed)+'-hydro'+str(Setting.hydro_QC)+\
+                    '.csv';
     if Setting.print_all_vars:
         pls = ['ng','solar','wind','hydro','nuclear','OCGT','CCGT','CCGT-CCS','solar-UPV','wind-new','wind-offshore','nuclear-new'];
         header = []; header.append('Hourly Generation:');
@@ -637,8 +700,17 @@ def Publish_results(s_time,MIP_gap):
         for p in pls: header.append(p);
         header.append('NG_marginal_price:');
         for g in range(nG): header.append(str(g));
+        
+        if Setting.hydro_QC==1:
+            header.append('QC_prod');
+            header.append('QC_eCap');
+            header.append('QC_eShed');
+            header.append('QC_flow_from_MA');
+            header.append('QC_flow_to_MA');
+            header.append('QC_flow_from_ME');
+            header.append('QC_flow_to_ME');
               
-        row0 = [['']*(len(header)+10) for i in range(max(368,Setting.num_rep_days*24+3))];
+        row0 = [['']*(len(header)+10) for i in range(Tqc)];
         #row0 = np.zeros((max(96,Setting.num_rep_days*24+3),77))-1;
         #row0[:] = np.nan;
         col = 1; 
@@ -714,6 +786,17 @@ def Publish_results(s_time,MIP_gap):
         # for k in range(nG):
         #     for tau in FY:
         #         row0[tau][col+k] = GV.marginal_prices_val[k,tau];
+        col += nG;        
+        if Setting.hydro_QC==1:
+            for t in range(Tqc):
+                row0[t][col]=QC.prod_val[t];
+                row0[t][col+1]=QC.eCap_val[t];
+                row0[t][col+2]=QC.eShed_val[t];
+                row0[t][col+3]=QC.flow_from_NE_val[0,t];
+                row0[t][col+4]=QC.flow_to_NE_val[0,t];
+                row0[t][col+5]=QC.flow_from_NE_val[1,t];
+                row0[t][col+6]=QC.flow_to_NE_val[1,t];
+                
                 
         with open(name,'w',encoding='UTF8',newline='') as fid:
             writer=csv.writer(fid);

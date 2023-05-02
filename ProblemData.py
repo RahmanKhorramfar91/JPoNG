@@ -87,6 +87,8 @@ df_ng_dem = pd.read_csv(Gas_dir+'/NG_Load_'+Setting.electrification_scenario+'_B
 df_exis_svl = pd.read_csv(Gas_dir+'/SVL_data.csv');
 df_svl_params = pd.read_csv(Gas_dir+'/SVL_params.csv');
 
+
+
 #%% other parameters
 class other_prm():
     type_prod_lim = np.array(dfo['resource_avail (solar,wind,offshore,nuclear,hydro)[MW]'].iloc[:5]);# [22e3, 10e3, 280e3,3.5e3,2.6e3]; # 10e6 means no limit
@@ -425,6 +427,38 @@ for i in range(len(df_svl_params)):
     svl.inv_coef = (Other_input.WACC/(1-s1));
 
     SVLs.append(svl);
+    
+#%% Quebec Hydro
+# hydro import/export data
+df_qc_dem = pd.read_csv(f'Hydro-QC/QC_demand.csv');
+df_qc_inflow = pd.read_csv(f'Hydro-QC/QC-hydro-inflow-rates.csv');
+df_qc_other_params = pd.read_csv(f'Hydro-QC/Other-hydro-params.csv');
+class Quebec:
+    demand = [];
+    init_en_cap = []; 
+    max_en_cap = [];
+    max_pow_cap = [];
+    NE_nodes = [];
+    line_max_flow = [];
+    ramp_rate = [];
+    min_output_rate = [];
+    inflow_rate = [];
+    FOM_cost = [];
+    NE_node2line = [];
+
+QCdat = Quebec();
+QCdat.demand = df_qc_dem['Demand (MW)-90%fromHydro'].to_numpy();
+QCdat.inflow_rate = df_qc_inflow['Reservoir_hydro_existing_QC'].to_numpy();
+QCdat.init_en_cap = df_qc_other_params['init_energy_cap (MWh)'][0];
+QCdat.max_en_cap = df_qc_other_params['max_energy_cap (MWh)'][0];
+QCdat.max_pow_cap = df_qc_other_params['max_power_cap (MW)'][0];
+QCdat.min_output_rate =  df_qc_other_params['min_output_rate'][0];
+QCdat.ramp_rate =  df_qc_other_params['ramp_rate'][0];
+QCdat.NE_nodes = df_qc_other_params['nodes_connected'].to_numpy();
+QCdat.line_max_flow = df_qc_other_params['max_flow_cap(MW)'].to_numpy();
+QCdat.FOM_cost = df_qc_other_params['FOM ($/MW/yr)'][0];
+QCdat.NE_node2line = {5:0,8:1};
+
 #%% delete unnecessary data from the workspace
 del df_br,df_ebus,df_eDem,df_ePlt,df_exis_svl,df_g2g_br,df_gnode;
 del df_ng_adjE,df_ng_dem,;

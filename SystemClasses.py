@@ -28,7 +28,6 @@ class EV(): # treated as a static class
     CSS_cost = []; trans_FOM_cost = [];
     e_system_cost=[];
     
-    
     # other
     emis_amount=[];
     
@@ -62,5 +61,22 @@ class GV(): # treated as a static class
     import_cost_val=[];g_system_cost_val=[];
     pipe_FOM_cost_val=[];pipe_Decom_cost_val=[];
     
+   
+class QC:
+    eCap  = [];
+    max_prod = []; # to charge FOM
+    flow_to_NE = [];
+    flow_from_NE = [];
+    prod =[];
+    eShed = [];
+    cost = []
     
-    
+    eCap_val = [];
+    pCap_val = [];
+    outflow_val = [];
+    flow_to_NE_val =[];
+    flow_from_NE = [];
+    prod_val = [];
+    eShed_val = [];
+    cost_val =[];
+    max_prod_val=[];

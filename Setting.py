@@ -20,8 +20,9 @@ class Setting:
     solver_thread_num = int(); # number of thread solver uses
     base_year = int();  # the year on which the load projection is carried out [2000-2020]
     expansion_allowed = bool();
-    
+    CCS_allowed = bool();  # whether CCGC-CCS plants are allowed to be established
     poss_gas_consump = float();
+    hydro_QC = bool();  # hydro import/export from/to Quebeck allowed 
     #poss_emis = float();
     CO2_emission_1990 = float();
     e_emis_lim = float();

@@ -19,14 +19,14 @@ import sys;
 #import Modules;
 #%% Set Default Setting for the Porblem 
 Setting.Power_network_size = 17; 
-Setting.base_year = 2001;
+Setting.base_year = 2003;
 Setting.rep_day_folder = 'Representative Days';#extreme_days
 Setting.num_rep_days = 2;
 Setting.emis_case = 2;
 Setting.electrification_scenario = 'MX';   # HE, HX, ME, RF, and Historical
 Setting.emis_reduc_goal = 0.8; 
 Setting.VRE_share = 0.5;
-Setting.solver_gap = 0.01;
+Setting.solver_gap = 0.05;
 Setting.wall_clock_time_lim = 1; #hour
 Setting.UC_active = 0;
 Setting.relax_UC_vars = True;
@@ -35,8 +35,8 @@ Setting.solver_thread_num = 6;
 Setting.e_shed_penalty = 1e4;
 Setting.g_shed_penalty = 1e4;
 Setting.Metal_air_storage_cost='no-metal-air';# low and high, no-metal-air
-
-
+Setting.CCS_allowed = 1;
+Setting.hydro_QC = 1;
 if len(sys.argv)>1:
     print(str(sys.argv));
     Setting.rep_day_folder = sys.argv[1];
@@ -54,7 +54,8 @@ if len(sys.argv)>1:
     Setting.relax_int_vars = bool(int(sys.argv[13]));
     Setting.solver_thread_num = int(sys.argv[14]);
     Setting.Metal_air_storage_cost=sys.argv[15]; # high, low, medium, no-metal-air
-
+    Setting.CCS_allowed = int(sys.argv[16]);
+    Setting.hydro_QC = int(sys.argv[17]);
 Setting.expansion_allowed = 1;
 Setting.CRM_reserve = 0.15; # as recommended by NERC
 Setting.wall_clock_time_lim = Setting.wall_clock_time_lim*3600; # convert to second for Gurobi
