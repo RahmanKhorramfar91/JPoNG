@@ -168,7 +168,6 @@ class plant:
     startup_fuel=[];
     est_cost_coef = np.array([]);
     emission=[];
-    
     regional_mult = np.array([]);
 
 
